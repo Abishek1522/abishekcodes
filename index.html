@@ -1,0 +1,1119 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="description" content="Heart disease risk prediction project: overview, ML pipeline, interactive predictor and recommendations.">
+<title>Heart Risk Predictor</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* Layout: sticky four-tab app shell. One module visible at a time, ECG graph-paper motif in the overview, shared prediction state across modules. */
+:root {
+  --bg: #F3F7F8;
+  --panel: #FFFFFF;
+  --panel-2: #E9F0F2;
+  --fg: #12212A;
+  --muted: #4F626C;
+  --line: #D3DEE2;
+  --accent: #C21F39;
+  --accent-soft: rgba(194, 31, 57, 0.08);
+  --on-accent: #FFFFFF;
+  --ok: #0B7A68;
+  --warn: #9A5B00;
+  --grid-fine: rgba(194, 31, 57, 0.06);
+  --grid-bold: rgba(194, 31, 57, 0.12);
+  --font-display: "Bricolage Grotesque", "Helvetica Neue", Arial, sans-serif;
+  --font-body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0B1317;
+    --panel: #121D23;
+    --panel-2: #0F191F;
+    --fg: #E6EEF1;
+    --muted: #93A6AF;
+    --line: #25363F;
+    --accent: #FF5A70;
+    --accent-soft: rgba(255, 90, 112, 0.12);
+    --on-accent: #1A0508;
+    --ok: #3DD6B5;
+    --warn: #F2B450;
+    --grid-fine: rgba(255, 90, 112, 0.06);
+    --grid-bold: rgba(255, 90, 112, 0.12);
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0B1317;
+  --panel: #121D23;
+  --panel-2: #0F191F;
+  --fg: #E6EEF1;
+  --muted: #93A6AF;
+  --line: #25363F;
+  --accent: #FF5A70;
+  --accent-soft: rgba(255, 90, 112, 0.12);
+  --on-accent: #1A0508;
+  --ok: #3DD6B5;
+  --warn: #F2B450;
+  --grid-fine: rgba(255, 90, 112, 0.06);
+  --grid-bold: rgba(255, 90, 112, 0.12);
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--fg); font-family: var(--font-body); font-size: 16px; line-height: 1.6; }
+body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); background: var(--bg); z-index: 40; }
+a { color: inherit; }
+p { margin: 0; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 3px; }
+.gut { padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+.eyebrow { font-family: var(--font-mono); font-size: 0.75rem; letter-spacing: 0.09em; text-transform: uppercase; color: var(--muted); margin: 0 0 12px; }
+h1, h2, h3, h4 { font-family: var(--font-display); text-wrap: balance; margin: 0; }
+h1 { font-weight: 800; font-size: clamp(2.4rem, 6vw, 4.2rem); line-height: 1.02; letter-spacing: -0.025em; }
+h2 { font-weight: 800; font-size: clamp(1.55rem, 3.4vw, 2.3rem); line-height: 1.1; letter-spacing: -0.02em; max-width: 24ch; }
+h3 { font-weight: 600; font-size: 1.15rem; line-height: 1.25; }
+h4 { font-weight: 600; font-size: 1rem; line-height: 1.3; }
+.sub { color: var(--muted); max-width: 60ch; margin-top: 12px; }
+
+/* Shell */
+.bar { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 30; background: var(--bg); border-bottom: 1px solid var(--line); }
+.bar-in { max-width: 1160px; margin: 0 auto; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px 24px; padding-block: 10px; }
+.brand { font-family: var(--font-display); font-weight: 800; letter-spacing: -0.01em; text-decoration: none; display: inline-flex; align-items: center; gap: 10px; white-space: nowrap; }
+.brand svg { width: 28px; height: 14px; flex: none; }
+.tabs { display: flex; gap: 2px; min-width: 0; overflow-x: auto; scrollbar-width: none; }
+.tabs::-webkit-scrollbar { display: none; }
+.tabs a { display: inline-flex; align-items: center; gap: 8px; text-decoration: none; color: var(--muted); font-size: 0.92rem; font-weight: 500; padding: 10px 14px; border-bottom: 2px solid transparent; white-space: nowrap; }
+.tabs a:hover { color: var(--fg); }
+.tabs a .n { font-family: var(--font-mono); font-size: 0.72rem; width: 20px; height: 20px; border-radius: 50%; border: 1px solid var(--line); display: inline-grid; place-items: center; }
+.tabs a[aria-current="page"] { color: var(--fg); border-bottom-color: var(--accent); }
+.tabs a[aria-current="page"] .n { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+
+.page { max-width: 1160px; margin: 0 auto; }
+.module { padding-block: clamp(28px, 5vw, 56px) 0; animation: rise 0.35s ease-out; }
+@keyframes rise { from { transform: translateY(8px); } to { transform: none; } }
+.mod-head { margin-bottom: 32px; }
+.block { padding-block: clamp(40px, 6vw, 72px) 0; }
+.block-head { margin-bottom: 24px; }
+
+.btn { display: inline-flex; align-items: center; gap: 8px; text-decoration: none; font: inherit; font-weight: 600; font-size: 0.95rem; padding: 12px 20px; border-radius: 4px; border: 1px solid var(--line); background: var(--panel); color: var(--fg); cursor: pointer; }
+.btn:hover { border-color: var(--fg); }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+.btn.primary:hover { filter: brightness(1.07); }
+.cta { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 28px; }
+.pager { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12px; margin-top: clamp(48px, 7vw, 80px); padding-top: 24px; border-top: 1px solid var(--line); }
+
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: clamp(18px, 3vw, 28px); min-width: 0; }
+.grid-2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; align-items: start; }
+.grid-3 { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 24px; }
+
+/* Rings */
+.ring { position: relative; width: var(--d, 160px); max-width: 100%; aspect-ratio: 1; color: var(--ok); flex: none; }
+.ring.moderate { color: var(--warn); }
+.ring.high { color: var(--accent); }
+.ring svg { width: 100%; height: 100%; transform: rotate(-90deg); }
+.ring .trk { fill: none; stroke: var(--line); stroke-width: 10; }
+.ring .val { fill: none; stroke: currentColor; stroke-width: 10; stroke-linecap: round; stroke-dasharray: 100; stroke-dashoffset: 100; transition: stroke-dashoffset 0.5s ease; }
+.ring-n { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; line-height: 1; }
+.ring-n b { font-family: var(--font-display); font-weight: 800; font-size: calc(var(--d, 160px) * 0.3); letter-spacing: -0.03em; font-variant-numeric: tabular-nums; color: var(--fg); }
+.ring-n small { font-family: var(--font-mono); font-size: 0.72rem; color: var(--muted); margin-top: 6px; }
+.pill { display: inline-block; font-weight: 600; font-size: 0.85rem; padding: 4px 12px; border-radius: 999px; border: 1.5px solid currentColor; color: var(--ok); }
+.pill.moderate { color: var(--warn); }
+.pill.high { color: var(--accent); }
+.chip { font-family: var(--font-mono); font-size: 0.68rem; letter-spacing: 0.03em; padding: 2px 8px; border-radius: 3px; border: 1px solid currentColor; color: var(--muted); white-space: nowrap; }
+.chip.ok { color: var(--ok); }
+.chip.warn { color: var(--warn); }
+.chip.bad { color: var(--accent); }
+
+/* Module 1 */
+.hero { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 0.7fr); gap: 32px 48px; align-items: center; position: relative; padding-block: clamp(8px, 3vw, 32px); }
+.hero::before { content: ""; position: absolute; inset: -56px calc(-1 * max(16px, env(safe-area-inset-right, 0px))) -8px calc(-1 * max(16px, env(safe-area-inset-left, 0px))); background-image: linear-gradient(var(--grid-fine) 1px, transparent 1px), linear-gradient(90deg, var(--grid-fine) 1px, transparent 1px), linear-gradient(var(--grid-bold) 1px, transparent 1px), linear-gradient(90deg, var(--grid-bold) 1px, transparent 1px); background-size: 12px 12px, 12px 12px, 60px 60px, 60px 60px; -webkit-mask-image: linear-gradient(to bottom, #000 40%, transparent 100%); mask-image: linear-gradient(to bottom, #000 40%, transparent 100%); pointer-events: none; }
+.hero > * { position: relative; min-width: 0; }
+.hero h1 { max-width: 15ch; }
+.lede { margin-top: 20px; max-width: 56ch; font-size: 1.1rem; color: var(--muted); }
+.lede strong { color: var(--fg); font-weight: 600; }
+.live { text-align: center; display: grid; justify-items: center; gap: 14px; }
+.live .ring { --d: 176px; }
+.live p { font-size: 0.88rem; color: var(--muted); max-width: 30ch; }
+.live a { font-size: 0.9rem; font-weight: 600; }
+.trace { margin-top: 24px; }
+.trace svg { display: block; width: 100%; height: auto; overflow: visible; }
+.trace .base { fill: none; stroke: var(--accent); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; opacity: 0.4; vector-effect: non-scaling-stroke; }
+.trace .sweep { fill: none; stroke: var(--accent); stroke-width: 3; stroke-linejoin: round; stroke-linecap: round; stroke-dasharray: 90 910; stroke-dashoffset: 90; vector-effect: non-scaling-stroke; animation: sweep 4.8s linear infinite; }
+@keyframes sweep { to { stroke-dashoffset: -910; } }
+.trace-cap { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 6px 20px; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--line); font-family: var(--font-mono); font-size: 0.72rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+
+.facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); border-top: 1px solid var(--line); margin-top: clamp(32px, 5vw, 56px); }
+.fact { padding: 22px 20px 22px 0; border-bottom: 1px solid var(--line); min-width: 0; }
+.fact b { display: block; font-family: var(--font-display); font-weight: 800; font-size: clamp(1.8rem, 3.6vw, 2.5rem); line-height: 1.05; letter-spacing: -0.02em; color: var(--accent); }
+.fact span { display: block; margin-top: 6px; color: var(--muted); font-size: 0.92rem; }
+.src { margin-top: 12px; font-size: 0.82rem; color: var(--muted); }
+
+.types { display: grid; gap: 0; margin: 20px 0 0; border-top: 1px solid var(--line); }
+.types div { padding: 14px 0; border-bottom: 1px solid var(--line); }
+.types dt { font-weight: 600; margin-bottom: 2px; }
+.types dd { margin: 0; color: var(--muted); font-size: 0.95rem; }
+.diag { width: 100%; height: auto; display: block; }
+.diag text { fill: var(--fg); font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.04em; }
+.diag .cap { fill: var(--muted); }
+.figcap { margin-top: 12px; font-size: 0.88rem; color: var(--muted); }
+
+.rf { list-style: none; margin: 16px 0 0; padding: 0; display: grid; gap: 10px; }
+.rf li { display: flex; gap: 10px; align-items: baseline; font-size: 0.97rem; }
+.rf li::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); flex: none; transform: translateY(-1px); }
+.rf.fixed li::before { background: var(--muted); }
+.rf small { color: var(--muted); }
+
+.alert { border: 1px solid var(--accent); background: var(--accent-soft); border-radius: 6px; padding: clamp(18px, 3vw, 28px); display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 20px 40px; }
+.alert h3 { color: var(--accent); margin-bottom: 8px; }
+.alert ul { margin: 0; padding-left: 1.1rem; display: grid; gap: 4px; }
+.alert p { font-size: 0.97rem; }
+.alert .em { grid-column: 1 / -1; padding-top: 16px; border-top: 1px solid var(--line); font-weight: 600; }
+
+.how { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 28px 24px; margin: 0; padding: 0; list-style: none; }
+.how li { border-top: 2px solid var(--line); padding-top: 18px; position: relative; min-width: 0; }
+.how li::before { content: ""; position: absolute; top: -7px; left: 0; width: 12px; height: 12px; border-radius: 50%; background: var(--accent); }
+.how .k { font-family: var(--font-mono); font-size: 0.75rem; letter-spacing: 0.09em; text-transform: uppercase; color: var(--muted); margin-bottom: 6px; }
+.how h3 { margin-bottom: 8px; }
+.how p { color: var(--muted); font-size: 0.97rem; }
+
+.scroll { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; min-width: 520px; font-size: 0.92rem; }
+th, td { text-align: left; padding: 11px 14px 11px 0; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font-family: var(--font-mono); font-size: 0.72rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); font-weight: 500; }
+td:first-child { font-weight: 600; white-space: nowrap; }
+td.u { font-family: var(--font-mono); font-size: 0.82rem; color: var(--muted); white-space: nowrap; }
+
+.limits { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 24px; margin-top: 8px; }
+.limits p { color: var(--muted); font-size: 0.95rem; padding-left: 14px; border-left: 2px solid var(--line); }
+.limits strong { color: var(--fg); display: block; font-weight: 600; margin-bottom: 2px; }
+
+.band-cta { margin-top: clamp(40px, 6vw, 72px); background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: clamp(22px, 4vw, 40px); display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 20px; }
+.band-cta h2 { font-size: clamp(1.4rem, 3vw, 1.9rem); }
+
+/* Module 2 */
+.lanes { display: grid; gap: 20px; }
+.lane h3 { font-size: 0.78rem; font-family: var(--font-mono); font-weight: 500; letter-spacing: 0.09em; text-transform: uppercase; color: var(--muted); margin-bottom: 12px; }
+.flow { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 28px; }
+.flow li { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 14px; position: relative; min-width: 0; }
+.flow li:not(:last-child)::after { content: "\2192"; position: absolute; right: -22px; top: 50%; transform: translateY(-50%); color: var(--accent); font-weight: 600; }
+.flow b { display: block; font-size: 0.95rem; line-height: 1.3; }
+.flow span { display: block; margin-top: 4px; font-size: 0.82rem; color: var(--muted); line-height: 1.4; }
+.lane.online .flow li { border-color: var(--accent); }
+
+.explorer { display: grid; grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.6fr); gap: 24px; align-items: start; }
+.stages { display: grid; gap: 6px; }
+.stage { display: flex; gap: 12px; align-items: center; text-align: left; font: inherit; color: var(--fg); background: transparent; border: 1px solid var(--line); border-radius: 6px; padding: 12px 14px; cursor: pointer; }
+.stage:hover { border-color: var(--fg); }
+.stage .n { font-family: var(--font-mono); font-size: 0.75rem; width: 24px; height: 24px; border-radius: 50%; border: 1px solid var(--line); display: grid; place-items: center; flex: none; }
+.stage[aria-selected="true"] { background: var(--panel); border-color: var(--accent); }
+.stage[aria-selected="true"] .n { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+.detail h3 { font-size: 1.4rem; margin-bottom: 10px; }
+.detail p { color: var(--muted); }
+.tags { display: flex; flex-wrap: wrap; gap: 8px; margin: 16px 0; }
+.tag { font-family: var(--font-mono); font-size: 0.75rem; padding: 3px 8px; border: 1px solid var(--line); border-radius: 3px; background: var(--panel-2); }
+.why { padding-left: 14px; border-left: 2px solid var(--accent); color: var(--fg); font-size: 0.95rem; }
+.code-label { font-family: var(--font-mono); font-size: 0.72rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); margin: 20px 0 8px; }
+pre { margin: 0; background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px; padding: 16px; overflow-x: auto; font-family: var(--font-mono); font-size: 0.82rem; line-height: 1.6; max-width: 100%; }
+pre code { font-family: inherit; }
+
+.serve { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr); gap: 32px; align-items: start; }
+.reqs { list-style: none; margin: 0; padding: 0; display: grid; gap: 0; counter-reset: r; }
+.reqs li { counter-increment: r; display: grid; grid-template-columns: 32px minmax(0, 1fr); gap: 12px; padding: 14px 0; border-bottom: 1px solid var(--line); font-size: 0.97rem; }
+.reqs li:first-child { border-top: 1px solid var(--line); }
+.reqs li::before { content: counter(r); font-family: var(--font-mono); font-size: 0.75rem; width: 24px; height: 24px; border-radius: 50%; border: 1px solid var(--accent); color: var(--accent); display: grid; place-items: center; margin-top: 2px; }
+
+.eval { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 32px; align-items: start; }
+.metrics { display: grid; gap: 0; margin: 0; }
+.metrics div { padding: 14px 0; border-bottom: 1px solid var(--line); }
+.metrics div:first-child { border-top: 1px solid var(--line); }
+.metrics dt { font-weight: 600; }
+.metrics dd { margin: 2px 0 0; color: var(--muted); font-size: 0.95rem; }
+.cm { display: grid; grid-template-columns: 28px repeat(2, minmax(0, 1fr)); grid-template-rows: auto repeat(2, auto); gap: 6px; font-size: 0.82rem; }
+.cm .ax { font-family: var(--font-mono); font-size: 0.68rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); display: flex; align-items: center; justify-content: center; }
+.cm .ax.v { writing-mode: vertical-rl; transform: rotate(180deg); }
+.cm .cell { padding: 16px 12px; border-radius: 4px; border: 1px solid var(--line); background: var(--panel-2); }
+.cm .cell b { display: block; font-size: 0.95rem; }
+.cm .cell span { color: var(--muted); }
+.cm .cell.good { border-color: var(--ok); }
+.cm .cell.bad { border-color: var(--accent); }
+
+/* Module 3 */
+.presets { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 18px; }
+.presets .lbl { font-family: var(--font-mono); font-size: 0.72rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); margin-right: 4px; }
+.preset { font: inherit; font-size: 0.88rem; font-weight: 500; padding: 7px 14px; border-radius: 999px; border: 1px solid var(--line); background: var(--panel); color: var(--fg); cursor: pointer; }
+.preset:hover { border-color: var(--fg); }
+.preset.on { border-color: var(--accent); background: var(--accent-soft); }
+
+.pred { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.85fr); gap: 24px; align-items: start; margin-top: 24px; }
+.group + .group { margin-top: 28px; padding-top: 24px; border-top: 1px solid var(--line); }
+.group > h3 { font-size: 0.75rem; font-family: var(--font-mono); font-weight: 500; letter-spacing: 0.09em; text-transform: uppercase; color: var(--muted); margin-bottom: 16px; }
+.field { margin-bottom: 18px; }
+.field:last-child { margin-bottom: 0; }
+.field-row { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 12px; margin-bottom: 6px; }
+.field label, .field legend { font-size: 0.93rem; font-weight: 500; padding: 0; }
+.field .meta { display: inline-flex; align-items: baseline; gap: 10px; }
+.field output { font-family: var(--font-mono); font-size: 0.92rem; font-variant-numeric: tabular-nums; white-space: nowrap; }
+input[type="range"] { width: 100%; accent-color: var(--accent); margin: 0; }
+.ends { display: flex; justify-content: space-between; font-family: var(--font-mono); font-size: 0.68rem; color: var(--muted); }
+fieldset { border: 0; margin: 0; padding: 0; min-width: 0; }
+.seg { display: inline-grid; grid-template-columns: 1fr 1fr; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+.seg label { position: relative; cursor: pointer; }
+.seg input, .cards input { position: absolute; opacity: 0; inset: 0; margin: 0; cursor: pointer; }
+.seg span { display: block; padding: 8px 22px; font-size: 0.92rem; text-align: center; }
+.seg input:checked + span { background: var(--accent); color: var(--on-accent); font-weight: 600; }
+.seg input:focus-visible + span, .cards input:focus-visible + span { outline: 2px solid var(--accent); outline-offset: -2px; }
+.cards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-top: 8px; }
+.cards label { position: relative; cursor: pointer; display: block; }
+.cards span { display: block; height: 100%; padding: 10px 12px; border: 1px solid var(--line); border-radius: 6px; font-size: 0.82rem; color: var(--muted); line-height: 1.4; }
+.cards span b { display: block; font-size: 0.9rem; color: var(--fg); margin-bottom: 2px; }
+.cards input:checked + span { border-color: var(--accent); background: var(--accent-soft); }
+.switch { display: flex; align-items: center; gap: 12px; cursor: pointer; font-size: 0.93rem; font-weight: 500; position: relative; }
+.switch + .switch { margin-top: 14px; }
+.switch input { position: absolute; opacity: 0; width: 44px; height: 24px; margin: 0; cursor: pointer; }
+.sw { width: 44px; height: 24px; border-radius: 999px; background: var(--line); position: relative; flex: none; transition: background 0.2s; }
+.sw::after { content: ""; position: absolute; top: 3px; left: 3px; width: 18px; height: 18px; border-radius: 50%; background: var(--panel); border: 1px solid var(--muted); transition: transform 0.2s; }
+.switch input:checked + .sw { background: var(--accent); }
+.switch input:checked + .sw::after { transform: translateX(20px); border-color: var(--accent); }
+.switch input:focus-visible + .sw { outline: 2px solid var(--accent); outline-offset: 3px; }
+.refnote { margin-top: 22px; font-size: 0.82rem; color: var(--muted); }
+
+.res { position: sticky; top: calc(76px + env(safe-area-inset-top, 0px)); }
+.res-top { display: flex; align-items: center; gap: 20px; flex-wrap: wrap; }
+.res-top .ring { --d: 148px; }
+.res-top h3 { margin: 10px 0 0; font-size: 1.05rem; }
+.contrib-t { margin-top: 24px; font-family: var(--font-mono); font-size: 0.72rem; letter-spacing: 0.09em; text-transform: uppercase; color: var(--muted); }
+.contrib { list-style: none; margin: 12px 0 0; padding: 0; display: grid; gap: 9px; }
+.contrib li { display: grid; grid-template-columns: 7.8rem minmax(0, 1fr) 2.4rem; align-items: center; gap: 10px; font-size: 0.85rem; }
+.contrib .bar { height: 6px; background: var(--line); border-radius: 3px; overflow: hidden; }
+.contrib .bar i { display: block; height: 100%; background: var(--muted); opacity: 0.7; border-radius: 3px; transition: width 0.25s ease; }
+.contrib li.top .bar i { background: var(--accent); opacity: 1; }
+.contrib .pts { font-family: var(--font-mono); font-variant-numeric: tabular-nums; text-align: right; color: var(--muted); }
+.flag { margin-top: 18px; padding: 12px 14px; border: 1px solid var(--accent); background: var(--accent-soft); border-radius: 6px; font-size: 0.88rem; }
+.res .cta { margin-top: 22px; }
+.notice { margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--line); font-size: 0.82rem; color: var(--muted); }
+.notice strong { color: var(--fg); font-weight: 600; }
+
+/* Module 4 */
+.sum { display: grid; grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr); gap: 24px; align-items: stretch; }
+.sum-l { display: flex; flex-direction: column; align-items: flex-start; gap: 14px; }
+.sum-l .ring { --d: 168px; }
+.sum-l p { color: var(--muted); font-size: 0.93rem; }
+.sum-l a { font-size: 0.9rem; font-weight: 600; }
+.track { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; margin: 4px 0 18px; }
+.track span { font-family: var(--font-mono); font-size: 0.68rem; letter-spacing: 0.05em; text-transform: uppercase; color: var(--muted); padding-top: 8px; border-top: 4px solid var(--line); }
+.track span.on { color: var(--fg); border-top-color: var(--accent); font-weight: 500; }
+.next h3 { font-size: 1.5rem; margin-bottom: 8px; }
+.next p { color: var(--muted); }
+.next .flag { margin-top: 16px; }
+
+.drivers { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 20px; }
+.driver { display: flex; flex-direction: column; gap: 10px; }
+.driver .hd { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.driver .pt { font-family: var(--font-mono); font-size: 0.85rem; color: var(--accent); }
+.driver p { color: var(--muted); font-size: 0.95rem; }
+.driver .chip { align-self: flex-start; }
+.pillars { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 0 32px; border-top: 1px solid var(--line); }
+.pillar { padding: 20px 0; border-bottom: 1px solid var(--line); }
+.pillar h4 { margin-bottom: 6px; }
+.pillar p { color: var(--muted); font-size: 0.95rem; }
+.tests { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px 32px; }
+.tests li { display: flex; gap: 10px; align-items: baseline; padding: 10px 0; border-bottom: 1px solid var(--line); }
+.tests li::before { content: ""; width: 10px; height: 10px; border: 1.5px solid var(--accent); border-radius: 2px; flex: none; transform: translateY(1px); }
+.stack { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); margin: 0; border-top: 1px solid var(--line); }
+.stack div { padding: 18px 20px 18px 0; border-bottom: 1px solid var(--line); min-width: 0; }
+.stack dt { font-family: var(--font-mono); font-weight: 500; font-size: 0.95rem; color: var(--accent); margin-bottom: 4px; }
+.stack dd { margin: 0; color: var(--muted); font-size: 0.93rem; }
+.copybox { margin-top: 12px; width: 100%; min-height: 120px; font-family: var(--font-mono); font-size: 0.8rem; background: var(--panel-2); color: var(--fg); border: 1px solid var(--line); border-radius: 6px; padding: 12px; }
+.status { font-size: 0.85rem; color: var(--ok); align-self: center; }
+
+footer { margin-top: clamp(56px, 8vw, 96px); border-top: 1px solid var(--line); }
+.foot-in { max-width: 1160px; margin: 0 auto; padding-block: 24px 40px; display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px 24px; font-size: 0.88rem; color: var(--muted); }
+
+@media (max-width: 900px) {
+  .flow { grid-template-columns: minmax(0, 1fr); gap: 26px; }
+  .flow li:not(:last-child)::after { content: "\2193"; right: auto; left: 18px; top: auto; bottom: -24px; transform: none; }
+}
+@media (max-width: 820px) {
+  .hero, .grid-2, .explorer, .serve, .eval, .pred, .sum, .alert { grid-template-columns: minmax(0, 1fr); }
+  .res { position: static; }
+  .live { justify-items: start; text-align: left; }
+  .tabs { width: 100%; }
+  .tabs a { flex: 1 0 auto; justify-content: center; }
+}
+@media (max-width: 460px) {
+  .contrib li { grid-template-columns: 6.4rem minmax(0, 1fr) 2.2rem; }
+  .cards { grid-template-columns: minmax(0, 1fr); }
+  .tabs a { padding: 10px 10px; font-size: 0.86rem; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .module { animation: none; }
+  .trace .sweep { animation: none; opacity: 0; }
+  .ring .val, .contrib .bar i, .sw, .sw::after { transition: none; }
+}
+</style>
+
+<style>html{color-scheme:light}body{margin:0}</style>
+</head>
+<body>
+<header class="bar">
+  <div class="bar-in gut">
+    <a class="brand" href="#overview" aria-label="Heart Risk Predictor, overview">
+      <svg viewBox="0 0 28 14" aria-hidden="true"><path d="M0 8 H7 L9 4 L12 13 L15 0 L18 8 H28" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg>
+      Heart Risk Predictor
+    </a>
+    <nav class="tabs" aria-label="Modules">
+      <a href="#overview" data-tab="overview"><span class="n">1</span>Overview</a>
+      <a href="#pipeline" data-tab="pipeline"><span class="n">2</span>Pipeline</a>
+      <a href="#predictor" data-tab="predictor"><span class="n">3</span>Predictor</a>
+      <a href="#recommendations" data-tab="recommendations"><span class="n">4</span>Recommendations</a>
+    </nav>
+  </div>
+</header>
+
+<main class="page gut">
+
+<!-- ============ MODULE 1: OVERVIEW ============ -->
+<section class="module" id="m-overview" aria-labelledby="h-overview">
+  <div class="hero">
+    <div>
+      <p class="eyebrow">Module 1 · Overview</p>
+      <h1 id="h-overview">Know your heart-disease risk in under a minute.</h1>
+      <p class="lede">A machine learning model trained on health data analysed with <strong>Pandas</strong> and <strong>NumPy</strong>, deployed in a <strong>Flask</strong> web app. Enter a few measurements and the app displays a risk prediction in real time, then suggests what to do next.</p>
+      <div class="cta">
+        <a class="btn primary" href="#predictor">Open the predictor</a>
+        <a class="btn" href="#pipeline">See how it works</a>
+      </div>
+    </div>
+    <aside class="live" aria-label="Live example reading">
+      <div class="ring moderate" id="ring-hero">
+        <svg viewBox="0 0 120 120" aria-hidden="true"><circle class="trk" cx="60" cy="60" r="52"/><circle class="val" cx="60" cy="60" r="52" pathLength="100"/></svg>
+        <div class="ring-n"><b data-score>0</b><small>/ 100</small></div>
+      </div>
+      <span class="pill moderate" id="pill-hero">Moderate</span>
+      <p>Example reading from the Predictor. Change the inputs there and this updates.</p>
+      <a href="#predictor">Adjust the inputs &rarr;</a>
+    </aside>
+  </div>
+
+  <div class="trace" aria-hidden="true">
+    <svg viewBox="0 0 1000 160" preserveAspectRatio="none">
+      <path class="base" pathLength="1000" d="M0 100 h60 q10 -14 20 0 h20 l8 10 l12 -80 l12 100 l8 -30 h20 q18 -26 36 0 h40 h60 q10 -14 20 0 h20 l8 10 l12 -80 l12 100 l8 -30 h20 q18 -26 36 0 h40 h60 q10 -14 20 0 h20 l8 10 l12 -80 l12 100 l8 -30 h20 q18 -26 36 0 h40 h60 q10 -14 20 0 h20 l8 10 l12 -80 l12 100 l8 -30 h20 q18 -26 36 0 h40 h56"/>
+      <path class="sweep" pathLength="1000" d="M0 100 h60 q10 -14 20 0 h20 l8 10 l12 -80 l12 100 l8 -30 h20 q18 -26 36 0 h40 h60 q10 -14 20 0 h20 l8 10 l12 -80 l12 100 l8 -30 h20 q18 -26 36 0 h40 h60 q10 -14 20 0 h20 l8 10 l12 -80 l12 100 l8 -30 h20 q18 -26 36 0 h40 h60 q10 -14 20 0 h20 l8 10 l12 -80 l12 100 l8 -30 h20 q18 -26 36 0 h40 h56"/>
+    </svg>
+    <div class="trace-cap"><span>Lead II</span><span>25 mm/s</span><span>10 mm/mV</span><span>Illustrative trace</span></div>
+  </div>
+
+  <div class="facts" role="list">
+    <div class="fact" role="listitem"><b>19.8 million</b><span>deaths from cardiovascular disease worldwide in 2022</span></div>
+    <div class="fact" role="listitem"><b>About 32%</b><span>of all deaths worldwide</span></div>
+    <div class="fact" role="listitem"><b>85%</b><span>of those deaths were from heart attack and stroke</span></div>
+    <div class="fact" role="listitem"><b>Over 75%</b><span>occur in low- and middle-income countries</span></div>
+  </div>
+  <p class="src">Source: <a href="https://www.who.int/news-room/fact-sheets/detail/cardiovascular-diseases-(cvds)" target="_blank" rel="noopener">World Health Organization, cardiovascular diseases fact sheet</a>.</p>
+
+  <div class="block">
+    <div class="block-head">
+      <p class="eyebrow">Understanding heart disease</p>
+      <h2>What goes wrong inside the heart</h2>
+    </div>
+    <div class="grid-2">
+      <div>
+        <p class="sub" style="margin-top:0">&ldquo;Heart disease&rdquo; is an umbrella for several conditions. The one this project focuses on is coronary artery disease, the most common cause of heart attack.</p>
+        <dl class="types">
+          <div><dt>Coronary artery disease</dt><dd>The arteries that feed the heart muscle narrow as plaque builds up inside them.</dd></div>
+          <div><dt>Arrhythmia</dt><dd>The heart beats too fast, too slow or unevenly.</dd></div>
+          <div><dt>Heart failure</dt><dd>The heart cannot pump enough blood for the body&rsquo;s needs.</dd></div>
+          <div><dt>Valve disease</dt><dd>A heart valve does not open or close properly.</dd></div>
+        </dl>
+      </div>
+      <figure class="panel" style="margin:0">
+        <svg class="diag" viewBox="0 0 360 176" role="img" aria-label="Cross-section of a healthy artery next to one narrowed by plaque">
+          <circle cx="90" cy="76" r="64" fill="var(--line)"/>
+          <circle cx="90" cy="76" r="46" fill="var(--accent)" opacity="0.85"/>
+          <text x="90" y="76" text-anchor="middle" dominant-baseline="middle" style="fill:var(--on-accent)">blood flow</text>
+          <circle cx="270" cy="76" r="64" fill="var(--line)"/>
+          <circle cx="270" cy="76" r="50" fill="var(--warn)" opacity="0.85"/>
+          <circle cx="276" cy="76" r="17" fill="var(--accent)" opacity="0.9"/>
+          <text x="90" y="166" text-anchor="middle">Healthy artery</text>
+          <text x="270" y="166" text-anchor="middle">Narrowed by plaque</text>
+        </svg>
+        <figcaption class="figcap">Plaque narrows the channel that blood flows through. Less blood reaches the heart muscle, most noticeably during effort.</figcaption>
+      </figure>
+    </div>
+  </div>
+
+  <div class="block">
+    <div class="block-head">
+      <p class="eyebrow">Risk factors</p>
+      <h2>What raises the risk</h2>
+    </div>
+    <div class="grid-2">
+      <div class="panel">
+        <h3>Factors you can change</h3>
+        <ul class="rf">
+          <li>High blood pressure</li>
+          <li>High cholesterol</li>
+          <li>Tobacco use</li>
+          <li>Diabetes and high blood sugar</li>
+          <li>Physical inactivity</li>
+          <li>Unhealthy diet and excess weight</li>
+          <li>Harmful use of alcohol</li>
+        </ul>
+      </div>
+      <div class="panel">
+        <h3>Factors you cannot change</h3>
+        <ul class="rf fixed">
+          <li>Age <small>(risk rises over the years)</small></li>
+          <li>Sex <small>(men tend to develop it earlier)</small></li>
+          <li>Family history of early heart disease</li>
+        </ul>
+        <p class="figcap">The predictor in Module 3 uses the measurable factors above together with exercise-test results and symptoms.</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="block">
+    <div class="alert" role="note">
+      <div>
+        <h3>Warning signs of a heart attack</h3>
+        <ul>
+          <li>Pain or discomfort in the centre of the chest</li>
+          <li>Pain in the arms, left shoulder, elbows, jaw or back</li>
+          <li>Shortness of breath</li>
+          <li>Nausea or vomiting, light-headedness, a cold sweat, or pale skin</li>
+        </ul>
+      </div>
+      <div>
+        <p>Symptoms can be mild or different in some people, including women. A risk score cannot tell you whether something is happening right now.</p>
+      </div>
+      <p class="em">If you think you or someone near you is having a heart attack, call your local emergency number straight away (for example 112, 911 or 999) instead of using this site.</p>
+    </div>
+  </div>
+
+  <div class="block">
+    <div class="block-head">
+      <p class="eyebrow">How prediction works</p>
+      <h2>From measurements to a risk estimate</h2>
+    </div>
+    <ol class="how">
+      <li><p class="k">In</p><h3>Measurements go in</h3><p>Age, blood pressure, cholesterol, exercise-test results and symptoms are entered as numbers and choices.</p></li>
+      <li><p class="k">Model</p><h3>The model compares</h3><p>A machine learning model learned from patient records where the outcome was known. It weighs each measurement and how they combine.</p></li>
+      <li><p class="k">Out</p><h3>A risk estimate comes out</h3><p>The result is a score and a band. It estimates how likely heart disease is. It does not diagnose it.</p></li>
+    </ol>
+  </div>
+
+  <div class="block">
+    <div class="block-head">
+      <p class="eyebrow">The data behind the model</p>
+      <h2>One row per patient, one column per measurement</h2>
+      <p class="sub">Prediction models learn from tables of patient records. The final column records whether heart disease was present. Public collections such as the UCI Heart Disease data use this layout, with measurements like these.</p>
+    </div>
+    <div class="panel scroll">
+      <table>
+        <thead><tr><th scope="col">Feature</th><th scope="col">Unit</th><th scope="col">Why it matters</th></tr></thead>
+        <tbody>
+          <tr><td>Age</td><td class="u">years</td><td>The risk of coronary disease rises with age.</td></tr>
+          <tr><td>Sex</td><td class="u">male / female</td><td>Men tend to develop coronary disease earlier in life.</td></tr>
+          <tr><td>Chest pain type</td><td class="u">4 categories</td><td>Pain brought on by effort points to reduced blood flow to the heart.</td></tr>
+          <tr><td>Resting blood pressure</td><td class="u">mm Hg</td><td>High pressure strains and damages the arteries.</td></tr>
+          <tr><td>Serum cholesterol</td><td class="u">mg/dl</td><td>Raised cholesterol feeds plaque build-up.</td></tr>
+          <tr><td>Fasting blood sugar</td><td class="u">above / below 120 mg/dl</td><td>High glucose damages blood vessels over time.</td></tr>
+          <tr><td>Maximum heart rate</td><td class="u">bpm</td><td>Reached during an exercise test. A low peak can reflect reduced cardiac capacity.</td></tr>
+          <tr><td>Exercise-induced angina</td><td class="u">yes / no</td><td>Chest pain that effort brings on.</td></tr>
+          <tr><td>ST depression</td><td class="u">mm</td><td>An exercise ECG change linked to reduced blood supply.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="block">
+    <div class="block-head"><p class="eyebrow">Limits</p><h2>What a prediction cannot do</h2></div>
+    <div class="limits">
+      <p><strong>It estimates, it does not diagnose.</strong>A score shows likelihood. Only a clinician can confirm or rule out disease.</p>
+      <p><strong>It only knows its training data.</strong>A model reflects the patterns in the records it learned from, and can be wrong for people unlike them.</p>
+      <p><strong>It does not replace an examination.</strong>Symptoms, history and tests carry far more information than a handful of inputs.</p>
+    </div>
+  </div>
+
+  <div class="band-cta">
+    <div><p class="eyebrow">Next</p><h2>See how the project is built</h2></div>
+    <div class="cta" style="margin:0"><a class="btn primary" href="#pipeline">Module 2 &middot; Pipeline &rarr;</a><a class="btn" href="#predictor">Skip to the predictor</a></div>
+  </div>
+</section>
+
+<!-- ============ MODULE 2: PIPELINE ============ -->
+<section class="module" id="m-pipeline" aria-labelledby="h-pipeline" hidden>
+  <div class="mod-head">
+    <p class="eyebrow">Module 2 · Pipeline</p>
+    <h2 id="h-pipeline">How the project works, end to end</h2>
+    <p class="sub">The work happens in two phases. First the model is built offline from health data. Then it is served online, so a person gets a prediction the moment they submit their details.</p>
+  </div>
+
+  <div class="lanes">
+    <div class="lane">
+      <h3>Offline &middot; building the model</h3>
+      <ol class="flow">
+        <li><b>Health data</b><span>Patient records in a table</span></li>
+        <li><b>Analysis</b><span>Pandas and NumPy</span></li>
+        <li><b>Training</b><span>Machine learning model</span></li>
+        <li><b>Evaluation</b><span>Scored on unseen records</span></li>
+        <li><b>Saved model</b><span>Stored as a file</span></li>
+      </ol>
+    </div>
+    <div class="lane online">
+      <h3>Online &middot; serving a prediction</h3>
+      <ol class="flow">
+        <li><b>Web form</b><span>User enters their details</span></li>
+        <li><b>Flask route</b><span>Receives and validates</span></li>
+        <li><b>Feature array</b><span>Same order as training</span></li>
+        <li><b>Model</b><span>Returns the risk</span></li>
+        <li><b>Result</b><span>Displayed in real time</span></li>
+      </ol>
+    </div>
+  </div>
+
+  <div class="block">
+    <div class="block-head"><p class="eyebrow">Stage explorer</p><h2>Six stages, one at a time</h2><p class="sub">Select a stage to see what happens, which tools are used and what the code typically looks like.</p></div>
+    <div class="explorer">
+      <div class="stages" role="tablist" aria-label="Pipeline stages" aria-orientation="vertical" id="stages"></div>
+      <div class="panel detail" id="stage-detail" role="tabpanel" aria-live="polite"></div>
+    </div>
+  </div>
+
+  <div class="block">
+    <div class="block-head"><p class="eyebrow">Serving</p><h2>What happens when you press predict</h2></div>
+    <div class="serve">
+      <ol class="reqs">
+        <li><span>The user fills in the form. The browser sends the values to the Flask app.</span></li>
+        <li><span>Flask checks that every value is present and in a sensible range.</span></li>
+        <li><span>The values are arranged into an array in the same column order used during training.</span></li>
+        <li><span>The loaded model returns the probability of heart disease.</span></li>
+        <li><span>Flask sends the result back and the page updates the risk display.</span></li>
+      </ol>
+      <div>
+        <p class="code-label" style="margin-top:0">Illustrative Flask route</p>
+<pre><code>@app.route("/predict", methods=["POST"])
+def predict():
+    data = request.get_json()
+    row = np.array([[data[name] for name in FEATURES]])
+    risk = model.predict_proba(row)[0][1]
+    return jsonify(risk=round(float(risk) * 100, 1))</code></pre>
+      </div>
+    </div>
+  </div>
+
+  <div class="block">
+    <div class="block-head"><p class="eyebrow">Evaluation</p><h2>How a screening model is judged</h2><p class="sub">Accuracy alone can hide problems. For a health screen, missing someone who is at risk costs more than a false alarm, so recall gets special attention.</p></div>
+    <div class="eval">
+      <dl class="metrics">
+        <div><dt>Accuracy</dt><dd>The share of all predictions that are correct.</dd></div>
+        <div><dt>Precision</dt><dd>Of the people flagged as at risk, how many really were.</dd></div>
+        <div><dt>Recall</dt><dd>Of the people who really had the disease, how many were flagged.</dd></div>
+        <div><dt>ROC-AUC</dt><dd>How well the model ranks at-risk people above healthy ones across every threshold.</dd></div>
+      </dl>
+      <div class="panel">
+        <div class="cm" role="img" aria-label="Confusion matrix: actual versus predicted, with true and false positives and negatives">
+          <span></span><span class="ax">Predicted: no disease</span><span class="ax">Predicted: disease</span>
+          <span class="ax v">Actual: no</span>
+          <div class="cell good"><b>True negative</b><span>Healthy, correctly cleared</span></div>
+          <div class="cell bad"><b>False positive</b><span>Healthy, flagged by mistake</span></div>
+          <span class="ax v">Actual: yes</span>
+          <div class="cell bad"><b>False negative</b><span>At risk, missed</span></div>
+          <div class="cell good"><b>True positive</b><span>At risk, correctly flagged</span></div>
+        </div>
+        <p class="figcap">Every metric above is built from these four counts.</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="block">
+    <div class="block-head"><p class="eyebrow">Built with</p><h2>The tools behind it</h2></div>
+    <dl class="stack">
+      <div><dt>Python</dt><dd>Language across the data work and the web app.</dd></div>
+      <div><dt>Pandas</dt><dd>Loading and analysing the health data.</dd></div>
+      <div><dt>NumPy</dt><dd>Numerical work on the patient measurements.</dd></div>
+      <div><dt>Machine learning</dt><dd>The model that predicts heart disease risk.</dd></div>
+      <div><dt>Flask</dt><dd>The web app that serves predictions in real time.</dd></div>
+    </dl>
+  </div>
+
+  <div class="pager">
+    <a class="btn" href="#overview">&larr; Overview</a>
+    <a class="btn primary" href="#predictor">Module 3 &middot; Predictor &rarr;</a>
+  </div>
+</section>
+
+<!-- ============ MODULE 3: PREDICTOR ============ -->
+<section class="module" id="m-predictor" aria-labelledby="h-predictor" hidden>
+  <div class="mod-head" style="margin-bottom:0">
+    <p class="eyebrow">Module 3 · Predictor</p>
+    <h2 id="h-predictor">Enter the details, watch the risk update</h2>
+    <p class="sub">Every change recalculates instantly, the way the Flask app responds to a submitted form. Start from an example profile or enter your own values.</p>
+    <div class="presets" role="group" aria-label="Example profiles">
+      <span class="lbl">Examples</span>
+      <button type="button" class="preset" data-preset="low">Lower-risk profile</button>
+      <button type="button" class="preset" data-preset="mod">Borderline profile</button>
+      <button type="button" class="preset" data-preset="high">Higher-risk profile</button>
+    </div>
+  </div>
+
+  <div class="pred">
+    <form class="panel" id="form" autocomplete="off" onsubmit="return false">
+      <div class="group">
+        <h3>Profile</h3>
+        <div class="field">
+          <div class="field-row"><label for="f-age">Age</label><span class="meta"><output id="o-age" for="f-age"></output></span></div>
+          <input id="f-age" type="range" min="25" max="85" step="1" value="58">
+          <div class="ends"><span>25</span><span>85</span></div>
+        </div>
+        <fieldset class="field">
+          <legend>Sex</legend>
+          <div class="seg" style="margin-top:8px">
+            <label><input type="radio" name="sex" value="male" checked><span>Male</span></label>
+            <label><input type="radio" name="sex" value="female"><span>Female</span></label>
+          </div>
+        </fieldset>
+      </div>
+
+      <div class="group">
+        <h3>Resting measurements</h3>
+        <div class="field">
+          <div class="field-row"><label for="f-bp">Resting blood pressure</label><span class="meta"><span class="chip" id="c-bp"></span><output id="o-bp" for="f-bp"></output></span></div>
+          <input id="f-bp" type="range" min="90" max="210" step="1" value="140">
+          <div class="ends"><span>90</span><span>210</span></div>
+        </div>
+        <div class="field">
+          <div class="field-row"><label for="f-chol">Serum cholesterol</label><span class="meta"><span class="chip" id="c-chol"></span><output id="o-chol" for="f-chol"></output></span></div>
+          <input id="f-chol" type="range" min="110" max="420" step="1" value="250">
+          <div class="ends"><span>110</span><span>420</span></div>
+        </div>
+        <label class="switch" for="f-fbs"><input id="f-fbs" type="checkbox" role="switch"><span class="sw"></span><span>Fasting blood sugar above 120 mg/dl</span></label>
+      </div>
+
+      <div class="group">
+        <h3>Exercise test</h3>
+        <div class="field">
+          <div class="field-row"><label for="f-hr">Maximum heart rate achieved</label><span class="meta"><span class="chip" id="c-hr"></span><output id="o-hr" for="f-hr"></output></span></div>
+          <input id="f-hr" type="range" min="70" max="210" step="1" value="142">
+          <div class="ends"><span>70</span><span>210</span></div>
+        </div>
+        <div class="field">
+          <div class="field-row"><label for="f-st">ST depression (exercise vs rest)</label><span class="meta"><span class="chip" id="c-st"></span><output id="o-st" for="f-st"></output></span></div>
+          <input id="f-st" type="range" min="0" max="6" step="0.1" value="1.5">
+          <div class="ends"><span>0</span><span>6</span></div>
+        </div>
+        <label class="switch" for="f-ang"><input id="f-ang" type="checkbox" role="switch"><span class="sw"></span><span>Chest pain brought on by exercise (angina)</span></label>
+      </div>
+
+      <div class="group">
+        <h3>Symptoms</h3>
+        <fieldset class="field">
+          <legend>Chest pain type</legend>
+          <div class="cards">
+            <label><input type="radio" name="cp" value="none"><span><b>None</b>No chest discomfort</span></label>
+            <label><input type="radio" name="cp" value="nonanginal"><span><b>Non-anginal</b>Pain not typical of the heart</span></label>
+            <label><input type="radio" name="cp" value="atypical" checked><span><b>Atypical angina</b>Some features of heart-related pain</span></label>
+            <label><input type="radio" name="cp" value="typical"><span><b>Typical angina</b>Pressure or tightness on effort, eased by rest</span></label>
+          </div>
+        </fieldset>
+      </div>
+      <p class="refnote">Status labels use general reference ranges for illustration. A clinician interprets your actual results.</p>
+    </form>
+
+    <aside class="panel res" aria-live="polite" aria-label="Predicted risk">
+      <div class="res-top">
+        <div class="ring moderate" id="ring-pred">
+          <svg viewBox="0 0 120 120" aria-hidden="true"><circle class="trk" cx="60" cy="60" r="52"/><circle class="val" cx="60" cy="60" r="52" pathLength="100"/></svg>
+          <div class="ring-n"><b data-score>0</b><small>/ 100</small></div>
+        </div>
+        <div>
+          <span class="pill moderate" id="pill-pred">Moderate</span>
+          <h3 id="headline">Your inputs point to a moderate risk.</h3>
+        </div>
+      </div>
+      <p class="contrib-t">What is pushing the score</p>
+      <ul class="contrib" id="contrib"></ul>
+      <p class="flag" id="flag-pred" hidden>Chest pain on effort, or typical angina, should be assessed by a clinician whatever the score says.</p>
+      <div class="cta">
+        <a class="btn primary" href="#recommendations">See recommendations &rarr;</a>
+      </div>
+      <p class="notice"><strong>Interface demonstration.</strong> This page scores your inputs with a simple formula in your browser. It does not run the trained model, it stores nothing, and it is not medical advice. In the deployed project, the Flask app returns the model&rsquo;s prediction.</p>
+    </aside>
+  </div>
+
+  <div class="pager">
+    <a class="btn" href="#pipeline">&larr; Pipeline</a>
+    <a class="btn primary" href="#recommendations">Module 4 &middot; Recommendations &rarr;</a>
+  </div>
+</section>
+
+<!-- ============ MODULE 4: RECOMMENDATIONS ============ -->
+<section class="module" id="m-recommendations" aria-labelledby="h-recs" hidden>
+  <div class="mod-head">
+    <p class="eyebrow">Module 4 · Recommendations</p>
+    <h2 id="h-recs">What to do with this result</h2>
+    <p class="sub">Suggestions follow the score from the Predictor and the factors that drive it. They are general guidance to take to a doctor, not a treatment plan.</p>
+  </div>
+
+  <div class="sum">
+    <div class="panel sum-l">
+      <div class="ring moderate" id="ring-rec">
+        <svg viewBox="0 0 120 120" aria-hidden="true"><circle class="trk" cx="60" cy="60" r="52"/><circle class="val" cx="60" cy="60" r="52" pathLength="100"/></svg>
+        <div class="ring-n"><b data-score>0</b><small>/ 100</small></div>
+      </div>
+      <span class="pill moderate" id="pill-rec">Moderate</span>
+      <p>Based on the inputs in the Predictor.</p>
+      <a href="#predictor">&larr; Edit the inputs</a>
+    </div>
+    <div class="panel next">
+      <p class="eyebrow">Suggested next step</p>
+      <div class="track" id="track" aria-hidden="true"><span>Routine</span><span>Within weeks</span><span>Promptly</span></div>
+      <h3 id="next-h"></h3>
+      <p id="next-p"></p>
+      <p class="flag" id="flag-rec" hidden>Your inputs include chest pain on effort or typical angina. Whatever the score, arrange a medical assessment soon rather than waiting for a routine visit.</p>
+    </div>
+  </div>
+
+  <div class="block">
+    <div class="block-head"><p class="eyebrow">Your drivers</p><h2>What is pushing your score most</h2></div>
+    <div class="drivers" id="drivers"></div>
+  </div>
+
+  <div class="block">
+    <div class="block-head"><p class="eyebrow">Lifestyle</p><h2 id="life-h">Everyday habits that protect the heart</h2></div>
+    <div class="pillars" id="pillars"></div>
+  </div>
+
+  <div class="block">
+    <div class="block-head"><p class="eyebrow">Check-ups</p><h2>Tests to talk through with your doctor</h2><p class="sub">Your doctor decides which of these you need. Bring this list to the appointment.</p></div>
+    <ul class="tests" id="tests"></ul>
+  </div>
+
+  <div class="block">
+    <div class="alert" role="note">
+      <div>
+        <h3>Get urgent help if you notice</h3>
+        <ul>
+          <li>Chest pain, pressure or tightness that does not ease with rest</li>
+          <li>Pain spreading to the arm, jaw, shoulder or back</li>
+          <li>Sudden breathlessness, a cold sweat or fainting</li>
+        </ul>
+      </div>
+      <div>
+        <p>Do not wait for an appointment and do not drive yourself. Call your local emergency number (for example 112, 911 or 999).</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="block">
+    <div class="cta" style="margin-top:0">
+      <button type="button" class="btn primary" id="copy-btn">Copy summary</button>
+      <a class="btn" href="#predictor">Try different inputs</a>
+      <a class="btn" href="#overview">Back to overview</a>
+      <span class="status" id="copy-status" role="status"></span>
+    </div>
+    <textarea class="copybox" id="copy-box" readonly hidden aria-label="Summary text to copy"></textarea>
+    <p class="notice">This site is a portfolio demonstration. The score comes from a simple illustrative formula, not the trained model, and nothing you enter is stored or sent anywhere. It is not medical advice and does not replace a clinician.</p>
+  </div>
+
+  <div class="pager">
+    <a class="btn" href="#predictor">&larr; Predictor</a>
+    <a class="btn" href="#overview">Overview</a>
+  </div>
+</section>
+
+</main>
+
+<footer>
+  <div class="foot-in gut">
+    <span>Heart Disease Prediction project by Thangavelu S</span>
+    <span>Portfolio demonstration. Not medical advice.</span>
+  </div>
+</footer>
+
+<script>
+(function () {
+  var MODULES = ['overview', 'pipeline', 'predictor', 'recommendations'];
+  function $(id) { return document.getElementById(id); }
+  function clamp(v, lo, hi) { return Math.min(hi, Math.max(lo, v)); }
+  function el(tag, cls, text) { var n = document.createElement(tag); if (cls) n.className = cls; if (text != null) n.textContent = text; return n; }
+
+  /* ---------- Routing between modules ---------- */
+  var tabs = Array.prototype.slice.call(document.querySelectorAll('.tabs a'));
+  function route() {
+    var h = (location.hash || '').replace('#', '');
+    if (MODULES.indexOf(h) < 0) h = 'overview';
+    MODULES.forEach(function (m) { $('m-' + m).hidden = (m !== h); });
+    tabs.forEach(function (a) {
+      if (a.getAttribute('data-tab') === h) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current');
+    });
+    var active = document.querySelector('.tabs a[aria-current="page"]');
+    if (active && active.scrollIntoView) { try { active.scrollIntoView({ block: 'nearest', inline: 'nearest' }); } catch (e) {} }
+    window.scrollTo(0, 0);
+  }
+  window.addEventListener('hashchange', route);
+
+  /* ---------- Prediction state and scoring ---------- */
+  var PRESETS = {
+    low:  { age: 36, sex: 'female', cp: 'none',     bp: 112, chol: 175, fbs: false, hr: 176, ang: false, st: 0 },
+    mod:  { age: 58, sex: 'male',   cp: 'atypical', bp: 140, chol: 250, fbs: false, hr: 142, ang: false, st: 1.5 },
+    high: { age: 67, sex: 'male',   cp: 'typical',  bp: 165, chol: 305, fbs: true,  hr: 112, ang: true,  st: 3.2 }
+  };
+  var CP_PTS = { none: 0, nonanginal: 4, atypical: 8, typical: 14 };
+
+  function readState() {
+    var sex = document.querySelector('input[name="sex"]:checked');
+    var cp = document.querySelector('input[name="cp"]:checked');
+    return {
+      age: +$('f-age').value, sex: sex ? sex.value : 'male', cp: cp ? cp.value : 'none',
+      bp: +$('f-bp').value, chol: +$('f-chol').value, fbs: $('f-fbs').checked,
+      hr: +$('f-hr').value, ang: $('f-ang').checked, st: +$('f-st').value
+    };
+  }
+  function writeState(s) {
+    $('f-age').value = s.age; $('f-bp').value = s.bp; $('f-chol').value = s.chol;
+    $('f-hr').value = s.hr; $('f-st').value = s.st;
+    $('f-fbs').checked = s.fbs; $('f-ang').checked = s.ang;
+    document.querySelector('input[name="sex"][value="' + s.sex + '"]').checked = true;
+    document.querySelector('input[name="cp"][value="' + s.cp + '"]').checked = true;
+  }
+  function hrPct(s) { return s.hr / Math.max(1, 220 - s.age); }
+
+  function calc(s) {
+    var rows = [
+      { k: 'age',  label: 'Age',             max: 18, pts: clamp((s.age - 30) / 50, 0, 1) * 18 },
+      { k: 'sex',  label: 'Sex',             max: 4,  pts: s.sex === 'male' ? 4 : 0 },
+      { k: 'cp',   label: 'Chest pain',      max: 14, pts: CP_PTS[s.cp] },
+      { k: 'bp',   label: 'Blood pressure',  max: 10, pts: clamp((s.bp - 110) / 70, 0, 1) * 10 },
+      { k: 'chol', label: 'Cholesterol',     max: 10, pts: clamp((s.chol - 150) / 150, 0, 1) * 10 },
+      { k: 'fbs',  label: 'Fasting sugar',   max: 5,  pts: s.fbs ? 5 : 0 },
+      { k: 'hr',   label: 'Max heart rate',  max: 14, pts: clamp((0.95 - hrPct(s)) / 0.45, 0, 1) * 14 },
+      { k: 'ang',  label: 'Exercise angina', max: 10, pts: s.ang ? 10 : 0 },
+      { k: 'st',   label: 'ST depression',   max: 15, pts: clamp(s.st / 4, 0, 1) * 15 }
+    ];
+    var total = Math.round(rows.reduce(function (a, r) { return a + r.pts; }, 0));
+    var band = total < 30 ? 'low' : total < 60 ? 'moderate' : 'high';
+    return { rows: rows, total: total, band: band, flag: s.ang || s.cp === 'typical' };
+  }
+
+  var BAND_LABEL = { low: 'Low', moderate: 'Moderate', high: 'High' };
+  var HEADLINE = {
+    low: 'Your inputs point to a lower risk.',
+    moderate: 'Your inputs point to a moderate risk.',
+    high: 'Your inputs point to a higher risk.'
+  };
+
+  function setRing(id, res) {
+    var ring = $(id);
+    ring.className = 'ring ' + res.band;
+    ring.querySelector('.val').style.strokeDashoffset = String(100 - clamp(res.total, 0, 100));
+    ring.querySelector('[data-score]').textContent = res.total;
+  }
+  function setPill(id, res) { var p = $(id); p.className = 'pill ' + res.band; p.textContent = BAND_LABEL[res.band]; }
+
+  function chip(id, text, level) { var c = $(id); c.textContent = text; c.className = 'chip ' + level; }
+
+  /* ---------- Recommendation content ---------- */
+  var URGENCY = [
+    { h: 'Book a routine check-up', p: 'Nothing here calls for urgent action. Keep regular check-ups, and ask for blood pressure, cholesterol and blood sugar to be checked at the interval your doctor suggests.' },
+    { h: 'See a doctor in the next few weeks', p: 'Arrange a consultation to review your blood pressure, cholesterol and blood sugar, and to talk through which tests make sense for you.' },
+    { h: 'Speak to a doctor soon', p: 'Arrange a medical review within days instead of waiting for a routine visit, so your results can be assessed and any tests arranged.' }
+  ];
+  var LIFESTYLE = {
+    low: [
+      ['Move', 'Keep up about 150 minutes of moderate activity a week, such as brisk walking or cycling, plus two days of strength work.'],
+      ['Eat', 'Build meals around vegetables, fruit, whole grains, pulses and nuts. Keep salt below about 5 g (one teaspoon) a day.'],
+      ['Sleep and stress', 'Aim for 7 to 9 hours of sleep and keep a routine that lets you wind down.'],
+      ['Tobacco and alcohol', 'Stay tobacco-free and keep alcohol low.']
+    ],
+    moderate: [
+      ['Move', 'Build towards 150 minutes of moderate activity a week. Start with 10 to 15 minute walks and add a few minutes every week.'],
+      ['Eat', 'Move towards a Mediterranean-style pattern: more vegetables, pulses, fish and nuts, less fried and processed food. Keep salt below about 5 g a day.'],
+      ['Track your numbers', 'Check your weight, waist and blood pressure monthly, at home or at a pharmacy, and note the readings for your doctor.'],
+      ['Tobacco and alcohol', 'If you smoke, ask your doctor about a plan to quit. The heart benefits begin early. Keep alcohol low.']
+    ],
+    high: [
+      ['Move with care', 'Ask your doctor what level of activity is safe for you before increasing it. Stop and seek care if exercise brings on chest pain, breathlessness or dizziness.'],
+      ['Eat', 'Favour vegetables, pulses, whole grains, fish and nuts. Cut back on fried and ultra-processed food and keep salt below about 5 g a day.'],
+      ['Medicines', 'If you are prescribed medicines, take them exactly as directed and tell your doctor about any supplements.'],
+      ['Tobacco and alcohol', 'Avoid tobacco in every form and ask for support to stop. Keep alcohol to a minimum.']
+    ]
+  };
+  var TESTS = {
+    low: ['Routine blood pressure check', 'Lipid profile (cholesterol) at the interval your doctor suggests', 'Fasting glucose or HbA1c if you have diabetes risk factors'],
+    moderate: ['Blood pressure monitoring, including home readings', 'Lipid profile (total, LDL, HDL, triglycerides)', 'Fasting glucose or HbA1c', 'Resting ECG', 'Whether an exercise test is needed'],
+    high: ['Resting ECG', 'Exercise (stress) test or heart imaging, if your doctor advises', 'Lipid profile, fasting glucose and HbA1c', 'Echocardiogram, if advised', 'A review of any current medicines']
+  };
+  var DRIVER = {
+    age:  ['Cannot change', 'Age cannot be changed. The best response is to keep the other factors in a healthy range and keep check-ups regular.'],
+    sex:  ['Cannot change', 'Men tend to develop coronary disease earlier in life. This cannot be changed, so regular blood pressure and cholesterol checks are how you stay ahead of it.'],
+    cp:   ['Ask a clinician', 'Chest discomfort, especially during effort, should be assessed by a clinician. Note when it starts, how long it lasts and what eases it.'],
+    bp:   ['Can change', 'Check your pressure at home or at a pharmacy, cut back on salt, keep a healthy weight and limit alcohol. Ask your doctor which target suits you.'],
+    chol: ['Can change', 'Swap some saturated fat (fried food, fatty meat, full-fat dairy) for unsaturated fat, and add fibre such as oats and pulses. Ask for a lipid profile and a follow-up plan.'],
+    fbs:  ['Can change', 'Ask for an HbA1c or fasting glucose test. Cutting sugary drinks and staying active helps control blood sugar.'],
+    hr:   ['Ask a clinician', 'A lower peak heart rate on an exercise test can reflect fitness, medicines such as beta-blockers, or the heart itself. Your doctor can interpret it for you.'],
+    ang:  ['Ask a clinician', 'Chest pain brought on by effort needs a medical assessment. Do not push through it.'],
+    st:   ['Ask a clinician', 'ST depression is a change on an exercise ECG. It is a clinical finding that a doctor or cardiologist should interpret.']
+  };
+  var DRIVER_TITLE = { age: 'Age', sex: 'Sex', cp: 'Chest pain', bp: 'Blood pressure', chol: 'Cholesterol', fbs: 'Fasting blood sugar', hr: 'Peak heart rate', ang: 'Pain on exercise', st: 'ST depression' };
+
+  var lastSummary = '';
+
+  /* ---------- Rendering ---------- */
+  function render() {
+    var s = readState();
+    var res = calc(s);
+
+    // Inputs
+    $('o-age').textContent = s.age + ' years';
+    $('o-bp').textContent = s.bp + ' mm Hg';
+    $('o-chol').textContent = s.chol + ' mg/dl';
+    $('o-hr').textContent = s.hr + ' bpm';
+    $('o-st').textContent = s.st.toFixed(1) + ' mm';
+    chip('c-bp', s.bp < 120 ? 'Within range' : s.bp < 140 ? 'Elevated' : 'High', s.bp < 120 ? 'ok' : s.bp < 140 ? 'warn' : 'bad');
+    chip('c-chol', s.chol < 200 ? 'Within range' : s.chol < 240 ? 'Borderline' : 'High', s.chol < 200 ? 'ok' : s.chol < 240 ? 'warn' : 'bad');
+    var pct = Math.round(hrPct(s) * 100);
+    chip('c-hr', pct + '% of age max', pct >= 85 ? 'ok' : pct >= 70 ? 'warn' : 'bad');
+    chip('c-st', s.st < 1 ? 'Within range' : s.st < 2 ? 'Borderline' : 'High', s.st < 1 ? 'ok' : s.st < 2 ? 'warn' : 'bad');
+
+    // Rings and pills
+    setRing('ring-hero', res); setPill('pill-hero', res);
+    setRing('ring-pred', res); setPill('pill-pred', res);
+    setRing('ring-rec', res);  setPill('pill-rec', res);
+    $('headline').textContent = HEADLINE[res.band];
+    $('flag-pred').hidden = !res.flag;
+    $('flag-rec').hidden = !res.flag;
+
+    // Contributions (top three highlighted)
+    var sorted = res.rows.slice().sort(function (a, b) { return b.pts - a.pts; });
+    var topKeys = sorted.filter(function (r) { return r.pts >= 1; }).slice(0, 3).map(function (r) { return r.k; });
+    var ul = $('contrib'); ul.innerHTML = '';
+    res.rows.forEach(function (r) {
+      var li = el('li', topKeys.indexOf(r.k) >= 0 ? 'top' : '');
+      li.appendChild(el('span', '', r.label));
+      var bar = el('span', 'bar'); var i = el('i'); i.style.width = (r.pts / r.max * 100).toFixed(0) + '%'; bar.appendChild(i);
+      li.appendChild(bar);
+      li.appendChild(el('span', 'pts', '+' + Math.round(r.pts)));
+      ul.appendChild(li);
+    });
+
+    // Preset highlight
+    Array.prototype.forEach.call(document.querySelectorAll('.preset'), function (b) {
+      var p = PRESETS[b.getAttribute('data-preset')], same = true;
+      Object.keys(p).forEach(function (k) { if (p[k] !== s[k]) same = false; });
+      b.classList.toggle('on', same);
+    });
+
+    // Recommendations
+    var level = res.band === 'low' ? 0 : res.band === 'moderate' ? 1 : 2;
+    if (res.flag && level < 1) level = 1;
+    Array.prototype.forEach.call($('track').children, function (n, i) { n.classList.toggle('on', i === level); });
+    $('next-h').textContent = URGENCY[level].h;
+    $('next-p').textContent = URGENCY[level].p;
+
+    var dr = $('drivers'); dr.innerHTML = '';
+    var top = sorted.filter(function (r) { return r.pts >= 1; }).slice(0, 3);
+    if (!top.length) {
+      var none = el('div', 'panel driver'); none.appendChild(el('h4', '', 'No single factor stands out'));
+      none.appendChild(el('p', '', 'None of the inputs adds much to the score. Keep up the habits that got you here.'));
+      dr.appendChild(none);
+    }
+    top.forEach(function (r) {
+      var d = DRIVER[r.k];
+      var card = el('div', 'panel driver');
+      var hd = el('div', 'hd'); hd.appendChild(el('h4', '', DRIVER_TITLE[r.k])); hd.appendChild(el('span', 'pt', '+' + Math.round(r.pts) + ' pts')); card.appendChild(hd);
+      card.appendChild(el('span', 'chip ' + (d[0] === 'Can change' ? 'ok' : ''), d[0]));
+      card.appendChild(el('p', '', d[1]));
+      dr.appendChild(card);
+    });
+
+    var pl = $('pillars'); pl.innerHTML = '';
+    LIFESTYLE[res.band].forEach(function (x) {
+      var d = el('div', 'pillar'); d.appendChild(el('h4', '', x[0])); d.appendChild(el('p', '', x[1])); pl.appendChild(d);
+    });
+    var ts = $('tests'); ts.innerHTML = '';
+    TESTS[res.band].forEach(function (t) { ts.appendChild(el('li', '', t)); });
+
+    lastSummary = 'Heart risk summary (illustrative, not medical advice)\n' +
+      'Risk score: ' + res.total + ' / 100 (' + BAND_LABEL[res.band] + ')\n' +
+      'Main drivers: ' + (top.length ? top.map(function (r) { return DRIVER_TITLE[r.k] + ' (+' + Math.round(r.pts) + ')'; }).join(', ') : 'none stand out') + '\n' +
+      'Suggested next step: ' + URGENCY[level].h + '\n' +
+      'Tests to discuss: ' + TESTS[res.band].join('; ');
+  }
+
+  /* ---------- Events ---------- */
+  Array.prototype.forEach.call(document.querySelectorAll('#form input'), function (i) {
+    i.addEventListener('input', render); i.addEventListener('change', render);
+  });
+  Array.prototype.forEach.call(document.querySelectorAll('.preset'), function (b) {
+    b.addEventListener('click', function () { writeState(PRESETS[b.getAttribute('data-preset')]); render(); });
+  });
+
+  $('copy-btn').addEventListener('click', function () {
+    var status = $('copy-status'), box = $('copy-box');
+    function fallback() {
+      box.value = lastSummary; box.hidden = false; box.focus(); box.select();
+      status.textContent = 'Press copy on the selected text.';
+    }
+    try {
+      navigator.clipboard.writeText(lastSummary).then(function () {
+        box.hidden = true; status.textContent = 'Summary copied.';
+      }, fallback);
+    } catch (e) { fallback(); }
+  });
+
+  /* ---------- Module 2: stage explorer ---------- */
+  var STAGES = [
+    { t: 'Collect and load the data', w: 'Patient records are read into a Pandas DataFrame. Each row is a patient and each column is a measurement.', tools: ['Pandas'], why: 'Everything downstream depends on a table you understand and trust.',
+      code: 'import pandas as pd\n\ndf = pd.read_csv("heart.csv")\nprint(df.shape)\nprint(df.head())' },
+    { t: 'Explore and analyse', w: 'Summary statistics, distributions and correlations show which measurements move together with heart disease.', tools: ['Pandas', 'NumPy'], why: 'Analysis finds data problems early and shows which features carry signal.',
+      code: 'print(df.describe())\nprint(df.isna().sum())\nprint(df.corr(numeric_only=True)["target"].sort_values())' },
+    { t: 'Prepare the features', w: 'Missing values are handled, categories are encoded and numbers are scaled where needed. The same steps must run again at prediction time.', tools: ['Pandas', 'NumPy'], why: 'A model only works if live inputs are prepared exactly as the training data was.',
+      code: 'import numpy as np\n\nX = df.drop(columns="target")\ny = df["target"]\nX = X.fillna(X.median(numeric_only=True))' },
+    { t: 'Train the model', w: 'A machine learning model is fitted on part of the data so it learns how the measurements relate to the outcome.', tools: ['Machine learning'], why: 'Holding some data back means the model can later be tested on records it has never seen.',
+      code: 'from sklearn.model_selection import train_test_split\n\nX_train, X_test, y_train, y_test = train_test_split(\n    X, y, test_size=0.2, random_state=42, stratify=y\n)\nmodel.fit(X_train, y_train)' },
+    { t: 'Evaluate on unseen data', w: 'The model is scored on the records it held back. Recall is watched closely, because missing an at-risk person costs more than a false alarm.', tools: ['Machine learning', 'NumPy'], why: 'This is the honest estimate of how the model will behave on new people.',
+      code: 'from sklearn.metrics import classification_report, roc_auc_score\n\npred = model.predict(X_test)\nprint(classification_report(y_test, pred))\nprint(roc_auc_score(y_test, model.predict_proba(X_test)[:, 1]))' },
+    { t: 'Save and deploy with Flask', w: 'The trained model is saved to a file. The Flask app loads it once at start-up and uses it for every request.', tools: ['Flask', 'Python'], why: 'Loading once keeps each prediction fast enough to feel real-time.',
+      code: 'import joblib\njoblib.dump(model, "model.pkl")\n\n# app.py\nmodel = joblib.load("model.pkl")' }
+  ];
+  var stageWrap = $('stages'), detail = $('stage-detail');
+  function showStage(idx) {
+    Array.prototype.forEach.call(stageWrap.children, function (b, i) { b.setAttribute('aria-selected', i === idx ? 'true' : 'false'); b.tabIndex = i === idx ? 0 : -1; });
+    var s = STAGES[idx];
+    detail.innerHTML = '';
+    detail.appendChild(el('h3', '', s.t));
+    detail.appendChild(el('p', '', s.w));
+    var tg = el('div', 'tags'); s.tools.forEach(function (t) { tg.appendChild(el('span', 'tag', t)); }); detail.appendChild(tg);
+    detail.appendChild(el('p', 'why', s.why));
+    detail.appendChild(el('p', 'code-label', 'Illustrative code'));
+    var pre = el('pre'), code = el('code'); code.textContent = s.code; pre.appendChild(code); detail.appendChild(pre);
+  }
+  STAGES.forEach(function (s, i) {
+    var b = el('button', 'stage'); b.type = 'button'; b.setAttribute('role', 'tab');
+    b.appendChild(el('span', 'n', String(i + 1))); b.appendChild(el('span', '', s.t));
+    b.addEventListener('click', function () { showStage(i); });
+    b.addEventListener('keydown', function (e) {
+      var k = e.key, n = STAGES.length, j = null;
+      if (k === 'ArrowDown' || k === 'ArrowRight') j = (i + 1) % n;
+      if (k === 'ArrowUp' || k === 'ArrowLeft') j = (i - 1 + n) % n;
+      if (j !== null) { e.preventDefault(); showStage(j); stageWrap.children[j].focus(); }
+    });
+    stageWrap.appendChild(b);
+  });
+  showStage(0);
+
+  /* ---------- Start ---------- */
+  writeState(PRESETS.mod);
+  render();
+  route();
+})();
+</script>
+
+</body>
+</html>
